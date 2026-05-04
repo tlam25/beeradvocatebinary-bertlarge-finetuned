@@ -1,14 +1,3 @@
-"""
-Fine-tune BERT for binary aspect-level sentiment classification on BeerAdvocate.
-
-Runs across multiple seeds × multiple aspects.
-Saves per-run test metrics to ./results/seed_{seed}_{aspect}.json
-so analyze_results.py can compute mean ± std across seeds.
-
-Data is loaded from HuggingFace Hub: tlam25/BeerAdvocate-binary
-File layout on the hub:  {aspect}/{aspect}_{train|validation|test}_binary.csv
-Columns used:           text, {aspect}_binary_label   (label is 0 or 1)
-"""
 import os
 import json
 import random
@@ -112,7 +101,7 @@ def get_csv_path(aspect: str, split: str) -> str:
     )
 
 
-def prefetch_all(aspects, splits=("train", "validation", "test")):
+def prefetch_all(aspects, splits=("train", "dev", "test")):
     print("Pre-fetching all CSV files from HuggingFace Hub...")
     for aspect in aspects:
         for split in splits:
@@ -303,7 +292,7 @@ def run_one(aspect: str, seed: int, tokenizer):
         return BeerAdvocateDataset(get_csv_path(aspect, split), tokenizer, MAX_LEN, aspect)
 
     train_ds = load("train")
-    val_ds   = load("validation")
+    val_ds   = load("dev")
     test_ds  = load("test")
 
     train_sampler = create_weighted_sampler(train_ds.labels)
