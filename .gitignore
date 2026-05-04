@@ -1,0 +1,4 @@
+.env
+checkpoints/
+results/
+logs/
