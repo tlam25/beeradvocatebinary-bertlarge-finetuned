@@ -23,7 +23,7 @@ MODEL_NAME = "bert-large-uncased"
 ASPECTS    = ["appearance", "aroma", "palate", "taste"]
 SEEDS      = [2025, 42, 123, 7, 999]
 
-HF_REPO_ID   = "tlam25/BeerAdvocate-binary"
+HF_REPO_ID   = "tlam25/BeerAdvocateBinary-BERT-Large-checkpoints"
 HF_REPO_TYPE = "dataset"
 
 RESULTS_DIR = "./results"
@@ -57,12 +57,14 @@ _DELETE_AFTER_PUSH = False  # set by --delete-local-ckpt
 
 
 def push_checkpoint_to_hf(ckpt_path: str, seed: int, aspect: str):
-    """Upload a single checkpoint to HF Hub. Failures are non-fatal."""
+    """Upload a single checkpoint to HF Hub. Failures are non-fatal.
+    If the repo went missing between init and now (e.g. deleted from web UI),
+    try to recreate it once and retry."""
     if _HF_API is None or _HF_MODEL_REPO is None:
         return
     path_in_repo = f"seed_{seed}/best_bert_{aspect}.pt"
-    try:
-        print(f"  uploading to HF: {_HF_MODEL_REPO}/{path_in_repo} ...")
+
+    def _do_upload():
         _HF_API.upload_file(
             path_or_fileobj=ckpt_path,
             path_in_repo=path_in_repo,
@@ -70,6 +72,23 @@ def push_checkpoint_to_hf(ckpt_path: str, seed: int, aspect: str):
             repo_type="model",
             commit_message=f"add checkpoint seed={seed} aspect={aspect}",
         )
+
+    try:
+        print(f"  uploading to HF: {_HF_MODEL_REPO}/{path_in_repo} ...")
+        try:
+            _do_upload()
+        except Exception as e:
+            # Common case: repo was deleted on the web UI mid-run, or the
+            # initial create_repo silently no-op'd because of HF caching.
+            msg = str(e).lower()
+            if "not found" in msg or "404" in msg:
+                print(f"  repo missing, recreating {_HF_MODEL_REPO} and retrying...")
+                _HF_API.create_repo(repo_id=_HF_MODEL_REPO, repo_type="model",
+                                    exist_ok=True, private=True)
+                _do_upload()
+            else:
+                raise
+
         print(f"  uploaded -> https://huggingface.co/{_HF_MODEL_REPO}/blob/main/{path_in_repo}")
         if _DELETE_AFTER_PUSH:
             try:
@@ -78,7 +97,6 @@ def push_checkpoint_to_hf(ckpt_path: str, seed: int, aspect: str):
             except OSError as e:
                 print(f"  could not remove local file: {e}")
     except Exception as e:
-        # Never crash training because of a failed upload — JSON is already saved.
         print(f"  WARNING: HF upload failed ({type(e).__name__}): {e}")
 
 
@@ -427,9 +445,28 @@ def main():
         _HF_API        = HfApi(token=hf_token)
         _HF_MODEL_REPO = hf_repo
         _DELETE_AFTER_PUSH = args.delete_local_ckpt
-        # Create repo if it doesn't exist (private by default; you can flip to public on the web UI)
-        _HF_API.create_repo(repo_id=hf_repo, repo_type="model", exist_ok=True, private=True)
-        print(f"HF push enabled -> {hf_repo}  (private; delete_after_push={_DELETE_AFTER_PUSH})")
+
+        # Sanity: token role + namespace match
+        try:
+            me = _HF_API.whoami()
+            print(f"HF authenticated as: {me['name']}")
+            expected_owner = hf_repo.split("/")[0]
+            if me["name"] != expected_owner and expected_owner not in [o["name"] for o in me.get("orgs", [])]:
+                print(f"  WARNING: token user is '{me['name']}' but HF_MODEL_REPO owner is '{expected_owner}'.")
+                print(f"  You probably want HF_MODEL_REPO={me['name']}/{hf_repo.split('/', 1)[1]}")
+        except Exception as e:
+            print(f"  WARNING: whoami() failed: {e}")
+
+        # Create the repo (idempotent). If this fails, push will be disabled.
+        try:
+            url = _HF_API.create_repo(repo_id=hf_repo, repo_type="model",
+                                    exist_ok=True, private=True)
+            print(f"HF push enabled -> {hf_repo} (repo at {url}; delete_after_push={_DELETE_AFTER_PUSH})")
+        except Exception as e:
+            print(f"FATAL: cannot create/access repo {hf_repo}: {type(e).__name__}: {e}")
+            print("Disabling HF push for this run. Fix .env / token and re-run.")
+            _HF_API = None
+            _HF_MODEL_REPO = None
     else:
         missing = [v for v in ("HF_TOKEN", "HF_MODEL_REPO") if not os.environ.get(v)]
         print(f"HF push DISABLED (missing in .env: {missing})")
