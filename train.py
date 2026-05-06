@@ -23,8 +23,9 @@ MODEL_NAME = "bert-large-uncased"
 ASPECTS    = ["appearance", "aroma", "palate", "taste"]
 SEEDS      = [2025, 42, 123, 7, 999]
 
-HF_REPO_ID   = "tlam25/BeerAdvocateBinary-BERT-Large-checkpoints"
+HF_REPO_ID   = "tlam25/BeerAdvocate-binary"
 HF_REPO_TYPE = "dataset"
+HF_MODEL_REPO = "tlam25/BeerAdvocateBinary-BERT-Large-checkpoints"
 
 RESULTS_DIR = "./results"
 CKPT_DIR    = "./checkpoints"
@@ -438,7 +439,7 @@ def main():
     # ---- Load .env (HF_TOKEN, HF_MODEL_REPO) ----
     load_dotenv()
     hf_token = os.environ.get("HF_TOKEN")
-    hf_repo  = os.environ.get("HF_MODEL_REPO")
+    hf_repo  = HF_MODEL_REPO
 
     global _HF_API, _HF_MODEL_REPO, _DELETE_AFTER_PUSH
     if hf_token and hf_repo:
